@@ -22,7 +22,11 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const PRIMARY_SUPABASE_URL = 'https://zouixwnyhlrtkaziztsl.supabase.co';
+    const envUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    const isOldProject = Boolean(envUrl && envUrl.includes('znkzuruudhxlivzbmfyo'));
+    const supabaseUrl = !envUrl || isOldProject ? PRIMARY_SUPABASE_URL : envUrl;
+
     const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_KEY;
     const resendApiKey = process.env.RESEND_API_KEY;
     const resendFrom =
@@ -30,7 +34,7 @@ export async function POST(request: NextRequest) {
       process.env.MAIL_FROM ||
       'CRACKWITHX <onboarding@resend.dev>';
     const brevoApiKey = process.env.BREVO_API_KEY || process.env.SENDINBLUE_API_KEY;
-    const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL || process.env.MAIL_FROM || 'crackwithx@gmail.com';
+    const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL || process.env.MAIL_FROM || 'crackwithxteam@gmail.com';
     const brevoSenderName = process.env.BREVO_SENDER_NAME || 'CRACKWITHX';
 
     // Determine base URL
