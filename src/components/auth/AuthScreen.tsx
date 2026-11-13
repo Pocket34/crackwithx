@@ -506,43 +506,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           : 'https://crackwithx.vercel.app';
       const redirectTo = `${origin}/auth/callback?next=/auth/reset-password`;
 
-      // 1. Attempt recovery via secure server endpoint with Resend API / Supabase Admin
-      let serverHandled = false;
-      try {
-        const recoverRes = await fetch('/api/auth/recover', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: cleanEmail }),
-        });
+      // Safe diagnostic log (masks email local part to protect privacy)
+      const maskedEmail = cleanEmail.replace(/^(.)(.*)(@.*)$/, (_, f, m, d) => `${f}***${d}`);
+      console.log('[CrackwithX Auth] Initiating password recovery for:', maskedEmail);
+      console.log('[CrackwithX Auth] Recovery redirect target:', redirectTo);
 
-        const recoverData = await recoverRes.json().catch(() => ({}));
-
-        if (!recoverRes.ok) {
-          if (recoverData?.error && !recoverData?.fallbackToClient) {
-            setErrorMessage(recoverData.error);
-            serverHandled = true;
-            return;
-          }
-        } else if (recoverData?.success) {
-          setSuccessMessage(
-            recoverData.message ||
-              'Password reset instructions have been dispatched to your email address.'
-          );
-          serverHandled = true;
-          return;
-        }
-      } catch (apiErr) {
-        console.warn('Custom recover route bypassed, proceeding with Supabase Auth client:', apiErr);
-      }
-
-      if (serverHandled) return;
-
-      // 2. Client-side Supabase Auth resetPasswordForEmail
-      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+      // Genuinely call Supabase Auth resetPasswordForEmail to trigger configured SMTP (Brevo) delivery
+      const { data, error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
         redirectTo,
       });
 
       if (error) {
+        console.error('[CrackwithX Auth] Supabase resetPasswordForEmail error:', error.message);
         const msg = error.message.toLowerCase();
         if (msg.includes('rate limit')) {
           setErrorMessage('Password recovery rate limit reached. Please wait a few minutes before trying again.');
@@ -552,10 +527,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         return;
       }
 
+      console.log('[CrackwithX Auth] Supabase resetPasswordForEmail successfully accepted by Auth service.');
       setSuccessMessage(
-        'Password reset request dispatched. If your student email is registered, you will receive instructions in your inbox shortly.'
+        'Password reset instructions have been dispatched. Please check your inbox and spam folder.'
       );
     } catch (err: any) {
+      console.error('[CrackwithX Auth] Password recovery exception:', err);
       setErrorMessage(err.message || 'Password reset request failed.');
     } finally {
       setIsSubmitting(false);

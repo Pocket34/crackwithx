@@ -175,11 +175,22 @@ export async function POST(request: NextRequest) {
         }
       }
 
-      // If Resend API key is not configured, we return success with fallback instruction
+      // If Resend API key is not configured, trigger Supabase SMTP (Brevo) via resetPasswordForEmail
+      const { error: resetErr } = await supabaseAdmin.auth.resetPasswordForEmail(email, {
+        redirectTo,
+      });
+
+      if (resetErr) {
+        return NextResponse.json(
+          { error: resetErr.message || 'Failed to dispatch recovery email via Supabase SMTP.' },
+          { status: 400 }
+        );
+      }
+
       return NextResponse.json({
         success: true,
-        deliveryMethod: 'supabase_admin',
-        message: 'Recovery link generated. Please verify delivery.',
+        deliveryMethod: 'supabase_smtp',
+        message: 'Password reset instructions have been dispatched via configured SMTP.',
       });
     }
 

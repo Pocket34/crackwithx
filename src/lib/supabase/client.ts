@@ -13,6 +13,15 @@ export function createClient() {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY!;
 
+  if (typeof window !== 'undefined') {
+    try {
+      const projectHost = supabaseUrl ? new URL(supabaseUrl).host : 'UNDEFINED';
+      console.log('[CrackwithX] Supabase Browser Client initialized -> Host:', projectHost);
+    } catch {
+      // Safe fallback if URL parsing fails
+    }
+  }
+
   client = createBrowserClient(supabaseUrl, supabaseAnonKey);
   return client;
 }
