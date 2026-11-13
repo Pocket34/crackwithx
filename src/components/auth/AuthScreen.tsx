@@ -564,7 +564,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         if (msg.includes('rate limit')) {
           setErrorMessage('Password recovery rate limit reached. Please wait a few minutes before trying again.');
         } else if (msg.includes('error sending')) {
-          setErrorMessage('Email dispatch error from authentication service. If your account is registered, please wait a moment or contact support.');
+          setErrorMessage(`SMTP Delivery Failed: ${error.message} (status ${error.status || 500}). Supabase located your account, but the configured SMTP relay rejected email dispatch.`);
         } else {
           setErrorMessage(error.message);
         }
