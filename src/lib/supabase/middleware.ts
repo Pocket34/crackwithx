@@ -32,8 +32,8 @@ export async function updateSession(request: NextRequest) {
 
   const pathname = request.nextUrl.pathname;
 
-  // Never block auth callback or verification routes
-  if (pathname.startsWith('/auth')) {
+  // Never block auth callback, recovery, or verification routes
+  if (pathname.startsWith('/auth') || pathname.startsWith('/reset-password')) {
     return response;
   }
 

@@ -43,47 +43,75 @@ export const AuthCallbackClient: React.FC = () => {
         return;
       }
 
+      // Helper to compute target destination
+      const typeParam = searchParams.get('type') || '';
+      const nextParam = searchParams.get('next') || '';
+      const isRecovery =
+        typeParam === 'recovery' ||
+        (window.location.hash && window.location.hash.includes('type=recovery')) ||
+        nextParam.includes('reset-password');
+
+      const getRedirectUrl = () => {
+        if (isRecovery) {
+          return '/auth/reset-password';
+        }
+        if (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')) {
+          return nextParam;
+        }
+        return '/app';
+      };
+
       // 2. Check for PKCE Authorization Code (?code=...)
       const code = searchParams.get('code');
       if (code) {
         try {
           const { data, error } = await supabase.auth.exchangeCodeForSession(code);
           if (!error && data.session) {
-            window.location.href = '/app';
+            window.location.href = getRedirectUrl();
             return;
           }
 
           if (error) {
             console.warn('PKCE exchange note:', error.message);
-            // If code was already exchanged or opened from a secondary browser,
-            // Supabase cloud has already marked the user verified.
-            window.location.href = '/?verified=true';
+            if (isRecovery) {
+              window.location.href = `/auth/reset-password?error=${encodeURIComponent(error.message)}`;
+            } else {
+              window.location.href = '/?verified=true';
+            }
             return;
           }
         } catch (err: any) {
           console.warn('Code exchange caught:', err);
-          window.location.href = '/?verified=true';
+          if (isRecovery) {
+            window.location.href = '/auth/reset-password';
+          } else {
+            window.location.href = '/?verified=true';
+          }
           return;
         }
       }
 
       // 3. Check for Token Hash (?token_hash=... or ?token=...)
       const tokenHash = searchParams.get('token_hash') || searchParams.get('token');
-      const type = searchParams.get('type') || 'signup';
+      const verifyType = (searchParams.get('type') as any) || (isRecovery ? 'recovery' : 'signup');
       if (tokenHash) {
         try {
           const { data, error } = await supabase.auth.verifyOtp({
             token_hash: tokenHash,
-            type: type as any,
+            type: verifyType,
           });
 
           if (!error && data.session) {
-            window.location.href = '/app';
+            window.location.href = getRedirectUrl();
             return;
           }
 
           if (!error) {
-            window.location.href = '/?verified=true';
+            if (verifyType === 'recovery') {
+              window.location.href = '/auth/reset-password';
+            } else {
+              window.location.href = '/?verified=true';
+            }
             return;
           }
 
@@ -94,7 +122,7 @@ export const AuthCallbackClient: React.FC = () => {
           }
         } catch (err: any) {
           console.error('Verify OTP caught:', err);
-          window.location.href = '/?verified=true';
+          window.location.href = isRecovery ? '/auth/reset-password' : '/?verified=true';
           return;
         }
       }
@@ -104,7 +132,7 @@ export const AuthCallbackClient: React.FC = () => {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (session) {
-          window.location.href = '/app';
+          window.location.href = getRedirectUrl();
           return;
         }
       } catch (err) {
@@ -113,15 +141,23 @@ export const AuthCallbackClient: React.FC = () => {
 
       // 5. Listen for onAuthStateChange in case hash parsing finishes asynchronously
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          window.location.href = '/auth/reset-password';
+          return;
+        }
         if (session) {
-          window.location.href = '/app';
+          window.location.href = getRedirectUrl();
         }
       });
 
-      // 6. Fallback timeout: If no session found after 3 seconds, redirect to sign in
+      // 6. Fallback timeout: If no session found after 3 seconds, redirect to appropriate screen
       const timeoutId = setTimeout(() => {
         if (isMounted) {
-          window.location.href = '/?verified=true';
+          if (isRecovery) {
+            window.location.href = '/auth/reset-password';
+          } else {
+            window.location.href = '/?verified=true';
+          }
         }
       }, 3000);
 

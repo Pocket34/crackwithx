@@ -101,8 +101,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       // If code query param is present on /
       if (code) {
         setIsSubmitting(true);
+        const type = (searchParams.get('type') as any) || '';
+        const isRecovery = type === 'recovery' || searchParams.get('next')?.includes('reset-password');
         supabase.auth.exchangeCodeForSession(code).then(({ data, error }) => {
           setIsSubmitting(false);
+          if (isRecovery) {
+            window.location.href = '/auth/reset-password';
+            return;
+          }
           if (!error && data.session && data.user?.email_confirmed_at) {
             window.location.href = '/app';
           } else {
@@ -114,8 +120,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
       // If token_hash is present on /
       if (tokenHash) {
-        setIsSubmitting(true);
         const type = (searchParams.get('type') as any) || 'signup';
+        if (type === 'recovery') {
+          window.location.href = `/auth/reset-password?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
+          return;
+        }
+        setIsSubmitting(true);
         supabase.auth.verifyOtp({ token_hash: tokenHash, type }).then(({ data, error }) => {
           setIsSubmitting(false);
           if (!error && data.session && data.user?.email_confirmed_at) {
@@ -295,9 +305,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       });
 
       if (error) {
-        if (error.message.toLowerCase().includes('rate limit')) {
+        const msg = error.message.toLowerCase();
+        if (msg.includes('rate limit')) {
           setErrorMessage(
             'Supabase confirmation email rate limit reached (free tier allows limited confirmation emails per hour). Please wait a few minutes before trying again, or sign in if already registered.'
+          );
+        } else if (msg.includes('error sending confirmation email')) {
+          setErrorMessage(
+            'Supabase SMTP error: Unable to dispatch confirmation email. If using Resend sandbox (onboarding@resend.dev), emails can only be sent to the Resend account owner. For other recipients, a custom domain must be verified in Resend.'
           );
         } else {
           setErrorMessage(error.message);
@@ -446,27 +461,75 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    if (!email) {
-      setErrorMessage('Please enter your registered email address.');
+    const cleanEmail = email.trim().toLowerCase();
+    if (!cleanEmail) {
+      setErrorMessage('Please enter your registered student email address.');
+      return;
+    }
+
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(cleanEmail)) {
+      setErrorMessage('Please enter a valid student email address format.');
       return;
     }
 
     setIsSubmitting(true);
     try {
-      const origin = typeof window !== 'undefined' && window.location.origin 
-        ? window.location.origin 
-        : 'http://localhost:3000';
+      const origin =
+        typeof window !== 'undefined' && window.location.origin
+          ? window.location.origin
+          : 'https://crackwithx.vercel.app';
+      const redirectTo = `${origin}/auth/callback?next=/auth/reset-password`;
 
-      const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
-        redirectTo: `${origin}/auth/callback?next=/app/profile`,
+      // 1. Attempt recovery via secure server endpoint with Resend API / Supabase Admin
+      let serverHandled = false;
+      try {
+        const recoverRes = await fetch('/api/auth/recover', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: cleanEmail }),
+        });
+
+        const recoverData = await recoverRes.json().catch(() => ({}));
+
+        if (!recoverRes.ok) {
+          if (recoverData?.error && !recoverData?.fallbackToClient) {
+            setErrorMessage(recoverData.error);
+            serverHandled = true;
+            return;
+          }
+        } else if (recoverData?.success) {
+          setSuccessMessage(
+            recoverData.message ||
+              'Password reset instructions have been dispatched to your email address.'
+          );
+          serverHandled = true;
+          return;
+        }
+      } catch (apiErr) {
+        console.warn('Custom recover route bypassed, proceeding with Supabase Auth client:', apiErr);
+      }
+
+      if (serverHandled) return;
+
+      // 2. Client-side Supabase Auth resetPasswordForEmail
+      const { error } = await supabase.auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo,
       });
 
       if (error) {
-        setErrorMessage(error.message);
+        const msg = error.message.toLowerCase();
+        if (msg.includes('rate limit')) {
+          setErrorMessage('Password recovery rate limit reached. Please wait a few minutes before trying again.');
+        } else {
+          setErrorMessage(error.message);
+        }
         return;
       }
 
-      setSuccessMessage('Password reset instructions have been sent to your email.');
+      setSuccessMessage(
+        'Password reset request dispatched. If your student email is registered, you will receive instructions in your inbox shortly.'
+      );
     } catch (err: any) {
       setErrorMessage(err.message || 'Password reset request failed.');
     } finally {
@@ -973,7 +1036,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 {isSubmitting ? 'SENDING RESET LINK...' : 'SEND RECOVERY EMAIL'}
               </button>
 
-              <div className="text-center">
+              <div className="text-center space-y-2 pt-1">
+                <Link
+                  href="/auth/reset-password"
+                  className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition-colors block"
+                >
+                  Already have a recovery link or 6-digit code? Enter it here →
+                </Link>
                 <button
                   type="button"
                   onClick={() => {
