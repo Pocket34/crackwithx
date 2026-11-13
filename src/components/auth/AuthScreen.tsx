@@ -57,6 +57,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   const [verificationEmail, setVerificationEmail] = useState(initialEmail);
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
+  const [resendCooldown, setResendCooldown] = useState(0);
+
+  // Resend cooldown timer
+  useEffect(() => {
+    if (resendCooldown <= 0) return;
+    const timer = setInterval(() => {
+      setResendCooldown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [resendCooldown]);
 
   // Status
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -285,9 +295,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     setIsSubmitting(true);
     try {
-      const origin = typeof window !== 'undefined' && window.location.origin 
-        ? window.location.origin 
-        : 'http://localhost:3000';
+      const origin =
+        typeof window !== 'undefined' && window.location.origin
+          ? window.location.origin
+          : 'https://crackwithx.vercel.app';
       const emailRedirectTo = `${origin}/auth/callback`;
 
       const { data, error } = await supabase.auth.signUp({
@@ -377,7 +388,14 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       }
 
       if (verifyRes.error) {
-        setErrorMessage('Invalid or expired verification code.');
+        const msg = verifyRes.error.message.toLowerCase();
+        if (msg.includes('expired')) {
+          setErrorMessage('Your verification code has expired. Please click "Resend Code" below to receive a fresh 6-digit code.');
+        } else if (msg.includes('invalid') || msg.includes('token') || msg.includes('code')) {
+          setErrorMessage('Incorrect 6-digit verification code. Please check your email and re-enter.');
+        } else {
+          setErrorMessage(verifyRes.error.message || 'Invalid or expired verification code.');
+        }
         return;
       }
 
@@ -414,6 +432,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   const handleResendCode = async () => {
+    if (resendCooldown > 0 || isSubmitting) return;
+
     setErrorMessage(null);
     setSuccessMessage(null);
 
@@ -425,9 +445,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     setIsSubmitting(true);
     try {
-      const origin = typeof window !== 'undefined' && window.location.origin 
-        ? window.location.origin 
-        : 'http://localhost:3000';
+      const origin =
+        typeof window !== 'undefined' && window.location.origin
+          ? window.location.origin
+          : 'https://crackwithx.vercel.app';
       const emailRedirectTo = `${origin}/auth/callback`;
 
       const { error } = await supabase.auth.resend({
@@ -439,15 +460,19 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       });
 
       if (error) {
-        if (error.message.toLowerCase().includes('rate limit')) {
-          setErrorMessage('Rate limit reached. Please wait a few minutes before requesting another code.');
+        const msg = error.message.toLowerCase();
+        if (msg.includes('rate limit')) {
+          setErrorMessage('Rate limit reached: Supabase limits code requests. Please wait a minute before requesting another code.');
         } else {
           setErrorMessage(error.message);
         }
       } else {
-        setSuccessMessage('A new verification code has been sent.');
+        setSuccessMessage('A fresh 6-digit verification code has been dispatched to your email.');
         setOtpDigits(['', '', '', '', '', '']);
-        otpRefs.current[0]?.focus();
+        setResendCooldown(60);
+        setTimeout(() => {
+          otpRefs.current[0]?.focus();
+        }, 100);
       }
     } catch (err: any) {
       setErrorMessage(err.message || 'Failed to resend code.');
@@ -541,10 +566,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const redirectTo =
+      const origin =
         typeof window !== 'undefined' && window.location.origin
-          ? `${window.location.origin}/auth/callback`
-          : 'http://localhost:3000/auth/callback';
+          ? window.location.origin
+          : 'https://crackwithx.vercel.app';
+      const redirectTo = `${origin}/auth/callback`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
@@ -983,11 +1009,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
                 <button
                   type="button"
                   onClick={handleResendCode}
-                  disabled={isSubmitting}
+                  disabled={isSubmitting || resendCooldown > 0}
                   className="w-full py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs font-semibold text-slate-300 hover:text-white disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
                 >
                   <RotateCw className={`w-3.5 h-3.5 text-cyan-400 ${isSubmitting ? 'animate-spin' : ''}`} />
-                  <span>RESEND CODE</span>
+                  <span>{resendCooldown > 0 ? `RESEND CODE (${resendCooldown}s)` : 'RESEND CODE'}</span>
                 </button>
               </div>
 
