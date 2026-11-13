@@ -68,9 +68,10 @@ export async function POST(request: NextRequest) {
         });
 
         if (linkError) {
+          const lMsg = linkError.message.toLowerCase();
           if (
-            linkError.message.toLowerCase().includes('not found') ||
-            linkError.message.toLowerCase().includes('user does not exist')
+            lMsg.includes('not found') ||
+            lMsg.includes('user does not exist')
           ) {
             return NextResponse.json(
               {
@@ -79,6 +80,13 @@ export async function POST(request: NextRequest) {
               },
               { status: 404 }
             );
+          }
+
+          if (lMsg.includes('invalid api key')) {
+            return NextResponse.json({
+              fallbackToClient: true,
+              message: 'Server key mismatch, falling back to client-side Supabase Auth.',
+            });
           }
 
           return NextResponse.json(
@@ -218,6 +226,13 @@ export async function POST(request: NextRequest) {
             { error: 'Password recovery rate limit reached. Please wait a few minutes before trying again.' },
             { status: 429 }
           );
+        }
+
+        if (msg.includes('invalid api key')) {
+          return NextResponse.json({
+            fallbackToClient: true,
+            message: 'Server key mismatch, falling back to client-side Supabase Auth.',
+          });
         }
 
         return NextResponse.json(
