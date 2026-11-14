@@ -37,13 +37,15 @@ export async function POST(request: NextRequest) {
     const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL || process.env.MAIL_FROM || 'crackwithxteam@gmail.com';
     const brevoSenderName = process.env.BREVO_SENDER_NAME || 'CRACKWITHX';
 
-    // Determine base URL
-    const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
-    const proto = request.headers.get('x-forwarded-proto') || 'https';
-    const isLocal = host?.includes('localhost') || host?.includes('127.0.0.1');
-    const baseUrl = isLocal ? `${proto}://${host}` : 'https://crackwithx.vercel.app';
-
-    const redirectTo = `${baseUrl}/reset-password`;
+    // Production password recovery redirect target (NEVER fall back to localhost in production)
+    const PRODUCTION_RESET_URL = 'https://crackwithx.vercel.app/reset-password';
+    const siteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || '';
+    const host = request.headers.get('x-forwarded-host') || request.headers.get('host') || '';
+    const isExplicitLocalDev = process.env.NODE_ENV === 'development' && (host.includes('localhost') || host.includes('127.0.0.1'));
+    
+    const redirectTo = isExplicitLocalDev
+      ? `http://${host}/reset-password`
+      : (siteUrl && !siteUrl.includes('localhost') ? `${siteUrl}/reset-password` : PRODUCTION_RESET_URL);
 
     // Check if direct email delivery APIs are configured (Brevo API or Resend API)
     const hasDirectEmailApi = Boolean(brevoApiKey || resendApiKey);

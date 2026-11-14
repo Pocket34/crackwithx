@@ -525,13 +525,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     setIsSubmitting(true);
     try {
-      const origin =
-        typeof window !== 'undefined' && window.location.origin
-          ? window.location.origin
-          : 'https://crackwithx.vercel.app';
-      const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1');
-      const baseUrl = isLocal ? origin : 'https://crackwithx.vercel.app';
-      const redirectTo = `${baseUrl}/reset-password`;
+      // Production password recovery redirect target (NEVER fall back to localhost in production)
+      const PRODUCTION_RESET_URL = 'https://crackwithx.vercel.app/reset-password';
+      const envSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || '';
+      const isExplicitLocalDev =
+        typeof window !== 'undefined' &&
+        process.env.NODE_ENV === 'development' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+      const redirectTo = isExplicitLocalDev
+        ? `${window.location.origin}/reset-password`
+        : (envSiteUrl && !envSiteUrl.includes('localhost') ? `${envSiteUrl}/reset-password` : PRODUCTION_RESET_URL);
 
       // Safe diagnostic log (masks email local part to protect privacy)
       const maskedEmail = cleanEmail.replace(/^(.)(.*)(@.*)$/, (_, f, m, d) => `${f}***${d}`);
