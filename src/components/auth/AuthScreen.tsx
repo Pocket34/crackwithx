@@ -202,20 +202,21 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   }, [mode]);
 
   const handleOtpChange = (index: number, value: string) => {
-    // If user pasted multiple characters
-    if (value.length > 1) {
-      const pasted = value.replace(/\D/g, '').slice(0, 6).split('');
-      const newDigits = [...otpDigits];
-      pasted.forEach((char, i) => {
+    const cleanVal = value.replace(/\D/g, '');
+
+    // If user pasted or typed multiple digits
+    if (cleanVal.length > 1) {
+      const chars = cleanVal.slice(0, 6).split('');
+      const newDigits = ['', '', '', '', '', ''];
+      chars.forEach((char, i) => {
         newDigits[i] = char;
       });
       setOtpDigits(newDigits);
-      const nextIndex = Math.min(pasted.length, 5);
+      const nextIndex = Math.min(chars.length, 5);
       otpRefs.current[nextIndex]?.focus();
       return;
     }
 
-    const cleanVal = value.replace(/\D/g, '');
     const newDigits = [...otpDigits];
     newDigits[index] = cleanVal;
     setOtpDigits(newDigits);
@@ -226,8 +227,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
   };
 
   const handleOtpKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (e.key === 'Backspace' && !otpDigits[index] && index > 0) {
+    if (e.key === 'Backspace') {
+      if (!otpDigits[index] && index > 0) {
+        const newDigits = [...otpDigits];
+        newDigits[index - 1] = '';
+        setOtpDigits(newDigits);
+        otpRefs.current[index - 1]?.focus();
+      }
+    } else if (e.key === 'ArrowLeft' && index > 0) {
       otpRefs.current[index - 1]?.focus();
+    } else if (e.key === 'ArrowRight' && index < 5) {
+      otpRefs.current[index + 1]?.focus();
     }
   };
 
@@ -235,7 +245,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     e.preventDefault();
     const pastedData = e.clipboardData.getData('text').replace(/\D/g, '').slice(0, 6);
     if (pastedData) {
-      const newDigits = [...otpDigits];
+      const newDigits = ['', '', '', '', '', ''];
       for (let i = 0; i < pastedData.length; i++) {
         newDigits[i] = pastedData[i];
       }
@@ -268,8 +278,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         if (msg.includes('email not confirmed') || (error.status === 400 && msg.includes('not confirmed'))) {
           setVerificationEmail(email.trim());
           setOtpDigits(['', '', '', '', '', '']);
+          setResendCooldown(60);
           setMode('VERIFY_OTP');
           setErrorMessage('Your email address has not been verified yet. Enter the 6-digit code sent to your email.');
+          setTimeout(() => {
+            otpRefs.current[0]?.focus();
+          }, 150);
           return;
         } else if (msg.includes('invalid login credentials')) {
           setErrorMessage('Invalid student email or password. If you do not have an account yet, click "Sign Up" above to register.');
@@ -283,8 +297,12 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       if (data.user && !data.user.email_confirmed_at) {
         setVerificationEmail(email.trim());
         setOtpDigits(['', '', '', '', '', '']);
+        setResendCooldown(60);
         setMode('VERIFY_OTP');
         setErrorMessage('Your email address has not been verified yet. Enter the 6-digit verification code.');
+        setTimeout(() => {
+          otpRefs.current[0]?.focus();
+        }, 150);
         return;
       }
 
@@ -320,11 +338,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     setIsSubmitting(true);
     try {
-      const origin =
-        typeof window !== 'undefined' && window.location.origin
-          ? window.location.origin
-          : 'https://crackwithx.vercel.app';
-      const emailRedirectTo = `${origin}/auth/callback`;
+      // Production redirect URL (guarantee production domain, never localhost in production)
+      const PRODUCTION_SITE_URL = 'https://crackwithx.vercel.app';
+      const isExplicitLocalDev =
+        typeof window !== 'undefined' &&
+        process.env.NODE_ENV === 'development' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+      const emailRedirectTo = isExplicitLocalDev
+        ? `${window.location.origin}/auth/callback`
+        : `${PRODUCTION_SITE_URL}/auth/callback`;
 
       const { data, error } = await supabase.auth.signUp({
         email: email.trim(),
@@ -344,11 +367,11 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         const msg = error.message.toLowerCase();
         if (msg.includes('rate limit')) {
           setErrorMessage(
-            'Supabase confirmation email rate limit reached (free tier allows limited confirmation emails per hour). Please wait a few minutes before trying again, or sign in if already registered.'
+            'Supabase confirmation email rate limit reached. Please wait a few minutes before trying again, or sign in if already registered.'
           );
         } else if (msg.includes('error sending confirmation email')) {
           setErrorMessage(
-            'Supabase SMTP error: Unable to dispatch confirmation email. If using Resend sandbox (onboarding@resend.dev), emails can only be sent to the Resend account owner. For other recipients, a custom domain must be verified in Resend.'
+            'Unable to dispatch verification email. Please verify SMTP delivery configuration or try again shortly.'
           );
         } else {
           setErrorMessage(error.message);
@@ -363,13 +386,16 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         return;
       }
 
-      // DO NOT redirect unverified user to /app!
-      // Navigate to dedicated email verification OTP screen:
+      // Transition to dedicated 6-digit email OTP verification screen:
       const targetEmail = email.trim();
       setVerificationEmail(targetEmail);
       setOtpDigits(['', '', '', '', '', '']);
+      setResendCooldown(60); // Initialize 60s cooldown timer immediately to prevent rate limit clashes
       setMode('VERIFY_OTP');
-      setSuccessMessage(`We've sent a 6-digit verification code to your email address.`);
+      setSuccessMessage(`We've sent a 6-digit verification code to ${targetEmail}. Please check your inbox and enter it below.`);
+      setTimeout(() => {
+        otpRefs.current[0]?.focus();
+      }, 150);
     } catch (err: any) {
       setErrorMessage(err.message || 'Signup failed.');
     } finally {
@@ -396,59 +422,112 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     setIsSubmitting(true);
     try {
-      // 1. Attempt verifyOtp with type 'signup'
+      // 1. Verify 6-digit OTP with Supabase Auth using type: 'signup'
       let verifyRes = await supabase.auth.verifyOtp({
         email: targetEmail,
         token: cleanOtp,
         type: 'signup',
       });
 
-      // 2. Fallback to 'email' if 'signup' failed
+      // 2. Fallback to 'email' if 'signup' failed (compatibility with custom GoTrue token modes)
       if (verifyRes.error) {
-        verifyRes = await supabase.auth.verifyOtp({
-          email: targetEmail,
-          token: cleanOtp,
-          type: 'email',
-        });
+        const firstErr = verifyRes.error.message.toLowerCase();
+        if (!firstErr.includes('rate limit') && !firstErr.includes('expired')) {
+          const fallbackRes = await supabase.auth.verifyOtp({
+            email: targetEmail,
+            token: cleanOtp,
+            type: 'email',
+          });
+          if (!fallbackRes.error) {
+            verifyRes = fallbackRes;
+          }
+        }
       }
 
       if (verifyRes.error) {
         const msg = verifyRes.error.message.toLowerCase();
         if (msg.includes('expired')) {
-          setErrorMessage('Your verification code has expired. Please click "Resend Code" below to receive a fresh 6-digit code.');
+          setErrorMessage('Your 6-digit verification code has expired. Please click "RESEND CODE" below to receive a new code.');
+        } else if (msg.includes('already confirmed') || msg.includes('already verified')) {
+          setSuccessMessage('This email is already verified! Opening your student dashboard...');
+          const { data: currentSession } = await supabase.auth.getSession();
+          if (currentSession?.session) {
+            setTimeout(() => {
+              window.location.href = '/app';
+            }, 600);
+            return;
+          } else if (password) {
+            const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+              email: targetEmail,
+              password: password,
+            });
+            if (!signInErr && signInData.session) {
+              setTimeout(() => {
+                window.location.href = '/app';
+              }, 600);
+              return;
+            }
+          }
+          setMode('SIGN_IN');
+          return;
+        } else if (msg.includes('already used')) {
+          setErrorMessage('This verification code has already been used. Please request a new code or sign in.');
+        } else if (msg.includes('rate limit') || msg.includes('over_email_send_rate_limit')) {
+          setErrorMessage('Too many verification attempts. Please wait a minute before trying again.');
         } else if (msg.includes('invalid') || msg.includes('token') || msg.includes('code')) {
-          setErrorMessage('Incorrect 6-digit verification code. Please check your email and re-enter.');
+          setErrorMessage('Incorrect or expired 6-digit verification code. Please check your email and try again.');
         } else {
           setErrorMessage(verifyRes.error.message || 'Invalid or expired verification code.');
         }
         return;
       }
 
-      // 3. Verification successful! Refresh/get the current Supabase session
-      const { data: sessionData } = await supabase.auth.getSession();
+      // 3. Verification succeeded! Check returned session
+      const newSession = verifyRes.data?.session;
 
-      // Only after successful verification redirect to /app
-      if (sessionData.session && sessionData.session.user) {
+      if (newSession && newSession.user) {
+        try {
+          await supabase.auth.setSession({
+            access_token: newSession.access_token,
+            refresh_token: newSession.refresh_token,
+          });
+        } catch {}
+
         setSuccessMessage('Email verified successfully! Opening your student dashboard...');
         setTimeout(() => {
           window.location.href = '/app';
-        }, 500);
-      } else if (password) {
-        // If password was entered during signup/signin, sign in to establish session
+        }, 600);
+        return;
+      }
+
+      // Check current session from client
+      const { data: sessionData } = await supabase.auth.getSession();
+      if (sessionData?.session?.user) {
+        setSuccessMessage('Email verified successfully! Opening your student dashboard...');
+        setTimeout(() => {
+          window.location.href = '/app';
+        }, 600);
+        return;
+      }
+
+      // If user was verified but session was not returned automatically and password is known, sign in
+      if (password) {
         const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
           email: targetEmail,
           password: password,
         });
         if (!signInErr && signInData.session) {
-          window.location.href = '/app';
-        } else {
-          setSuccessMessage('Email verified successfully! Please sign in with your password.');
-          setMode('SIGN_IN');
+          setSuccessMessage('Email verified successfully! Opening your student dashboard...');
+          setTimeout(() => {
+            window.location.href = '/app';
+          }, 600);
+          return;
         }
-      } else {
-        setSuccessMessage('Email verified successfully! Please sign in with your password.');
-        setMode('SIGN_IN');
       }
+
+      // Fallback: prompt sign in
+      setSuccessMessage('Email verified successfully! Please sign in with your password.');
+      setMode('SIGN_IN');
     } catch (err: any) {
       setErrorMessage(err.message || 'Invalid or expired verification code.');
     } finally {
@@ -470,11 +549,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
     setIsSubmitting(true);
     try {
-      const origin =
-        typeof window !== 'undefined' && window.location.origin
-          ? window.location.origin
-          : 'https://crackwithx.vercel.app';
-      const emailRedirectTo = `${origin}/auth/callback`;
+      const PRODUCTION_SITE_URL = 'https://crackwithx.vercel.app';
+      const isExplicitLocalDev =
+        typeof window !== 'undefined' &&
+        process.env.NODE_ENV === 'development' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+      const emailRedirectTo = isExplicitLocalDev
+        ? `${window.location.origin}/auth/callback`
+        : `${PRODUCTION_SITE_URL}/auth/callback`;
 
       const { error } = await supabase.auth.resend({
         type: 'signup',
@@ -487,12 +570,13 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       if (error) {
         const msg = error.message.toLowerCase();
         if (msg.includes('rate limit')) {
-          setErrorMessage('Rate limit reached: Supabase limits code requests. Please wait a minute before requesting another code.');
+          setErrorMessage('Rate limit reached: Supabase limits email dispatch. Please wait a minute before requesting another code.');
+          setResendCooldown(60);
         } else {
           setErrorMessage(error.message);
         }
       } else {
-        setSuccessMessage('A fresh 6-digit verification code has been dispatched to your email.');
+        setSuccessMessage(`A fresh 6-digit verification code has been dispatched to ${targetEmail}.`);
         setOtpDigits(['', '', '', '', '', '']);
         setResendCooldown(60);
         setTimeout(() => {
@@ -618,11 +702,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
     setErrorMessage(null);
     setIsSubmitting(true);
     try {
-      const origin =
-        typeof window !== 'undefined' && window.location.origin
-          ? window.location.origin
-          : 'https://crackwithx.vercel.app';
-      const redirectTo = `${origin}/auth/callback`;
+      const PRODUCTION_SITE_URL = 'https://crackwithx.vercel.app';
+      const isExplicitLocalDev =
+        typeof window !== 'undefined' &&
+        process.env.NODE_ENV === 'development' &&
+        (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+
+      const redirectTo = isExplicitLocalDev
+        ? `${window.location.origin}/auth/callback`
+        : `${PRODUCTION_SITE_URL}/auth/callback`;
 
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
