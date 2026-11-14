@@ -40,11 +40,10 @@ export async function POST(request: NextRequest) {
     // Determine base URL
     const host = request.headers.get('x-forwarded-host') || request.headers.get('host');
     const proto = request.headers.get('x-forwarded-proto') || 'https';
-    const origin =
-      request.headers.get('origin') ||
-      (host ? `${proto}://${host}` : 'https://crackwithx.vercel.app');
+    const isLocal = host?.includes('localhost') || host?.includes('127.0.0.1');
+    const baseUrl = isLocal ? `${proto}://${host}` : 'https://crackwithx.vercel.app';
 
-    const redirectTo = `${origin}/auth/callback?next=/auth/reset-password`;
+    const redirectTo = `${baseUrl}/reset-password`;
 
     // Check if direct email delivery APIs are configured (Brevo API or Resend API)
     const hasDirectEmailApi = Boolean(brevoApiKey || resendApiKey);

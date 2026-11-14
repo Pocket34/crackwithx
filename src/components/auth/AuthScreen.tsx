@@ -83,6 +83,8 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       const urlEmail = searchParams.get('email');
       const code = searchParams.get('code');
       const tokenHash = searchParams.get('token_hash') || searchParams.get('token');
+      const urlReset = searchParams.get('reset');
+      const urlMode = searchParams.get('mode');
 
       if (urlEmail) {
         setEmail(urlEmail);
@@ -91,6 +93,15 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
       if (urlVerify === 'true') {
         setMode('VERIFY_OTP');
+      }
+
+      if (urlMode === 'forgot' || urlMode === 'FORGOT_PASSWORD') {
+        setMode('FORGOT_PASSWORD');
+      }
+
+      if (urlReset === 'success') {
+        setSuccessMessage('Password reset successfully! Please sign in with your new password.');
+        setMode('SIGN_IN');
       }
 
       // Check hash fragment for errors
@@ -110,15 +121,18 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
       // If code query param is present on /
       if (code) {
-        setIsSubmitting(true);
         const type = (searchParams.get('type') as any) || '';
-        const isRecovery = type === 'recovery' || searchParams.get('next')?.includes('reset-password');
+        const nextParam = searchParams.get('next') || '';
+        const isRecovery = type === 'recovery' || nextParam.includes('reset-password');
+
+        if (isRecovery) {
+          window.location.href = `/reset-password?code=${encodeURIComponent(code)}`;
+          return;
+        }
+
+        setIsSubmitting(true);
         supabase.auth.exchangeCodeForSession(code).then(({ data, error }) => {
           setIsSubmitting(false);
-          if (isRecovery) {
-            window.location.href = '/auth/reset-password';
-            return;
-          }
           if (!error && data.session && data.user?.email_confirmed_at) {
             window.location.href = '/app';
           } else {
@@ -132,7 +146,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
       if (tokenHash) {
         const type = (searchParams.get('type') as any) || 'signup';
         if (type === 'recovery') {
-          window.location.href = `/auth/reset-password?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
+          window.location.href = `/reset-password?token_hash=${encodeURIComponent(tokenHash)}&type=recovery`;
           return;
         }
         setIsSubmitting(true);
@@ -146,6 +160,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
           }
         });
       }
+
+      // Listen for PASSWORD_RECOVERY auth event if implicit hash flow lands on /
+      const { data: authListener } = supabase.auth.onAuthStateChange((event) => {
+        if (event === 'PASSWORD_RECOVERY') {
+          window.location.href = '/reset-password';
+        }
+      });
+
+      return () => {
+        authListener.subscription.unsubscribe();
+      };
 
       // If user opened with hash containing access_token from Supabase implicit flow
       if (window.location.hash && window.location.hash.includes('access_token')) {
@@ -504,7 +529,9 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
         typeof window !== 'undefined' && window.location.origin
           ? window.location.origin
           : 'https://crackwithx.vercel.app';
-      const redirectTo = `${origin}/auth/callback?next=/auth/reset-password`;
+      const isLocal = origin.includes('localhost') || origin.includes('127.0.0.1');
+      const baseUrl = isLocal ? origin : 'https://crackwithx.vercel.app';
+      const redirectTo = `${baseUrl}/reset-password`;
 
       // Safe diagnostic log (masks email local part to protect privacy)
       const maskedEmail = cleanEmail.replace(/^(.)(.*)(@.*)$/, (_, f, m, d) => `${f}***${d}`);
@@ -1085,7 +1112,7 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({
 
               <div className="text-center space-y-2 pt-1">
                 <Link
-                  href="/auth/reset-password"
+                  href="/reset-password"
                   className="text-xs text-cyan-400 hover:text-cyan-300 font-semibold transition-colors block"
                 >
                   Already have a recovery link or 6-digit code? Enter it here →

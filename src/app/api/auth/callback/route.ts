@@ -13,7 +13,7 @@ export async function GET(request: NextRequest) {
       const { error } = await supabase.auth.exchangeCodeForSession(code);
       if (!error) {
         if (type === 'recovery' || next?.includes('reset-password')) {
-          return NextResponse.redirect(`${origin}/auth/reset-password`);
+          return NextResponse.redirect(`${origin}/reset-password`);
         }
         if (next && next.startsWith('/') && !next.startsWith('//')) {
           return NextResponse.redirect(`${origin}${next}`);

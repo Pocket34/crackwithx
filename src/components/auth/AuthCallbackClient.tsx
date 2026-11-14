@@ -53,7 +53,7 @@ export const AuthCallbackClient: React.FC = () => {
 
       const getRedirectUrl = () => {
         if (isRecovery) {
-          return '/auth/reset-password';
+          return '/reset-password';
         }
         if (nextParam && nextParam.startsWith('/') && !nextParam.startsWith('//')) {
           return nextParam;
@@ -74,7 +74,7 @@ export const AuthCallbackClient: React.FC = () => {
           if (error) {
             console.warn('PKCE exchange note:', error.message);
             if (isRecovery) {
-              window.location.href = `/auth/reset-password?error=${encodeURIComponent(error.message)}`;
+              window.location.href = `/reset-password?error=${encodeURIComponent(error.message)}`;
             } else {
               window.location.href = '/?verified=true';
             }
@@ -83,7 +83,7 @@ export const AuthCallbackClient: React.FC = () => {
         } catch (err: any) {
           console.warn('Code exchange caught:', err);
           if (isRecovery) {
-            window.location.href = '/auth/reset-password';
+            window.location.href = '/reset-password';
           } else {
             window.location.href = '/?verified=true';
           }
@@ -108,7 +108,7 @@ export const AuthCallbackClient: React.FC = () => {
 
           if (!error) {
             if (verifyType === 'recovery') {
-              window.location.href = '/auth/reset-password';
+              window.location.href = '/reset-password';
             } else {
               window.location.href = '/?verified=true';
             }
@@ -122,7 +122,7 @@ export const AuthCallbackClient: React.FC = () => {
           }
         } catch (err: any) {
           console.error('Verify OTP caught:', err);
-          window.location.href = isRecovery ? '/auth/reset-password' : '/?verified=true';
+          window.location.href = isRecovery ? '/reset-password' : '/?verified=true';
           return;
         }
       }
@@ -142,7 +142,7 @@ export const AuthCallbackClient: React.FC = () => {
       // 5. Listen for onAuthStateChange in case hash parsing finishes asynchronously
       const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
         if (event === 'PASSWORD_RECOVERY') {
-          window.location.href = '/auth/reset-password';
+          window.location.href = '/reset-password';
           return;
         }
         if (session) {
@@ -154,7 +154,7 @@ export const AuthCallbackClient: React.FC = () => {
       const timeoutId = setTimeout(() => {
         if (isMounted) {
           if (isRecovery) {
-            window.location.href = '/auth/reset-password';
+            window.location.href = '/reset-password';
           } else {
             window.location.href = '/?verified=true';
           }
